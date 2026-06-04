@@ -58,7 +58,7 @@ $btnApriDest.Text = "Apri destinazione"
 $btnApriDest.Location = "610,90"
 $btnApriDest.Size = "120,25"
 $btnApriDest.Add_Click({
-    if(Test-Path $txtDest.Text){
+    if(Test-Path -LiteralPath $txtDest.Text){
         Start-Process $txtDest.Text
     }
 })
@@ -121,31 +121,49 @@ $btnExtract.Font = New-Object System.Drawing.Font("Segoe UI",12,[System.Drawing.
 $btnExtract.Location = "280,455"
 $btnExtract.Size = "150,35"
 
+# Helper per normalizzare i percorsi
+function Get-NormalPath {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
+    try {
+        $resolved = Resolve-Path -LiteralPath $Path -ErrorAction Stop
+        return $resolved.Path
+    } catch {
+        # Se non risolvibile (p.es. non esiste ancora), prova a costruire percorso assoluto
+        try { return [System.IO.Path]::GetFullPath($Path) } catch { return $Path }
+    }
+}
+
+
+
 $btnExtract.Add_Click({
 
-    $source = $txtSource.Text
-    $dest = $txtDest.Text
+    $source = Get-NormalPath $txtSource.Text
+    $dest   = Get-NormalPath $txtDest.Text
 
     $txtLog.AppendText("=== Avvio estrazione ===`r`n")
 
-    if(-not (Test-Path $source)){
-        [System.Windows.Forms.MessageBox]::Show("La cartella sorgente non esiste!","Errore")
+    if([string]::IsNullOrWhiteSpace($source) -or -not (Test-Path -LiteralPath $source)){
+        [System.Windows.Forms.MessageBox]::Show("La cartella sorgente non esiste o è vuota.","Errore")
         return
     }
 
-    if(-not (Test-Path $dest)){
-        [System.Windows.Forms.MessageBox]::Show("La cartella destinazione non esiste!","Errore")
+    if([string]::IsNullOrWhiteSpace($dest)){
+        [System.Windows.Forms.MessageBox]::Show("La cartella destinazione non è valida.","Errore")
         return
     }
+
+    # Crea la destinazione principale (se non esiste)
+    [void][System.IO.Directory]::CreateDirectory($dest)
 
     # Cerca ZIP
     if($chkRecursive.Checked){
-        $zipFiles = Get-ChildItem $source -Recurse -Filter *.zip -File
+        $zipFiles = Get-ChildItem -LiteralPath $source -Recurse -Filter *.zip -File
     } else {
-        $zipFiles = Get-ChildItem $source -Filter *.zip -File
+        $zipFiles = Get-ChildItem -LiteralPath $source -Filter *.zip -File
     }
 
-    if($zipFiles.Count -eq 0){
+    if(-not $zipFiles -or $zipFiles.Count -eq 0){
         [System.Windows.Forms.MessageBox]::Show("Nessun file ZIP trovato.","Info")
         return
     }
@@ -173,43 +191,53 @@ $btnExtract.Add_Click({
     $progress.Value = 0
 
     # Determina flag per CopyHere
-    # $copyFlags = 0x10   # non mostra UI
-	$copyFlags = 0x0
+    $copyFlags = 0x04   # non mostra UI
     if ($chkOverwrite.Checked) {
-        # $copyFlags = $copyFlags -bor 0x4  # aggiunge sovrascrittura automatica
-		$copyFlags = 0x10   # non mostra UI
-		$copyFlags = $copyFlags -bor 0x4  # aggiunge sovrascrittura automatica
+        # $copyFlags = 0x10  # aggiunge sovrascrittura automatica
+		$copyFlags =  0x04 + 0x10   # non mostra UI
+		
     }
 
     foreach ($zip in $zipFiles) {
 
         $txtLog.AppendText("Apro ZIP: $($zip.FullName)`r`n")
         [System.Windows.Forms.Application]::DoEvents()
-
+        
+        # Determina la destinazione
         if($chkKeepStructure.Checked){
-            $relativePath = $zip.DirectoryName.Substring($source.Length).TrimStart("\")
-            $extractPath = Join-Path $dest $relativePath
+            $relativePath = $zip.DirectoryName.Substring($source.Length).TrimStart('\')
+            $extractPath  = Join-Path $dest $relativePath
         } else {
-            $extractPath = $dest
+            $extractPath  = $dest
         }
 
-        if (!(Test-Path $extractPath)){
-            New-Item -ItemType Directory -Path $extractPath -Force | Out-Null
-        }
+        # Normalizza/crea la cartella di estrazione
+        [void][System.IO.Directory]::CreateDirectory($extractPath)
+
+        # Risolvi il percorso per la Shell
+        $extractPathResolved = Get-NormalPath $extractPath
 
         try {
             $zipFolder  = $shell.NameSpace($zip.FullName)
-            $destFolder = $shell.NameSpace($extractPath)
+            $destFolder = $shell.NameSpace($extractPathResolved)
 
             if ($zipFolder -eq $null){
                 $txtLog.AppendText("ERRORE: Il file ZIP è corrotto o non accessibile.`r`n")
                 continue
             }
+            if ($destFolder -eq $null){
+                $txtLog.AppendText("ERRORE: Impossibile aprire cartella di destinazione: $extractPathResolved`r`n")
+                continue
+            }
 
-            foreach ($item in $zipFolder.Items()) {
+            $items = $zipFolder.Items()
+            $totalEntries = $items.Count
+            if ($totalEntries -eq 0) {
+                $txtLog.AppendText("ZIP vuoto: $($zip.Name)`r`n")
+                continue
+            }
 
-                # Estrazione con flag
-                $destFolder.CopyHere($item, $copyFlags)
+            foreach ($item in $items) {
 
                 # Aggiorna progress bar globale
                 $progress.Value++
@@ -219,11 +247,15 @@ $btnExtract.Add_Click({
                 $txtLog.AppendText("Estrazione: $($item.Name)`r`n")
                 [System.Windows.Forms.Application]::DoEvents()
 
+                # Estrazione con flag
+                $destFolder.CopyHere($item, $copyFlags)
+
+
                 Start-Sleep -Milliseconds 50
             }
 
             if ($chkDelete.Checked){
-                Remove-Item $zip.FullName -Force
+                Remove-Item -LiteralPath $zip.FullName -Force
                 $txtLog.AppendText("ZIP eliminato.`r`n")
             }
 
@@ -231,7 +263,7 @@ $btnExtract.Add_Click({
             $txtLog.AppendText("ERRORE durante l'estrazione: $($_.Exception.Message)`r`n")
         }
     }
-
+    # Assicura progress bar a 100% a fine processo
     $progress.Value = $progress.Maximum
     [System.Windows.Forms.Application]::DoEvents()
 
