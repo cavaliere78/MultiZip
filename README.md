@@ -88,7 +88,7 @@ Al primo avvio, se 7-Zip non è già configurato, lo script effettuerà una rice
 
 ## 📸 Screenshot
 
-<img width="1123" height="830" alt="image" src="https://github.com/user-attachments/assets/5ac9bd10-0453-4079-92e5-1b781f7ee62f" />
+<img width="550" height="425" alt="image" src="https://github.com/user-attachments/assets/58c494f9-aa24-4196-94a2-7eb78087664b" />
 
 ---
 
