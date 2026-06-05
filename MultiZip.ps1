@@ -223,7 +223,7 @@ $btnExtract.Add_Click({
     # Cerca Archivi
     $zipFiles = Get-ChildItem -LiteralPath $source -Recurse:$chkRecursive.Checked -File | Where-Object {
         if ($has7z) {
-            $_.Extension -match "\.(zip|7z|rar|tar|gz|tgz|bz2|tbz2|xz|txz|iso|cab|wim|vhd|vmdk)$"
+            $_.Extension -match "\.(zip|7z|rar|tar|gz|tgz|bz2|tbz2|xz|txz|iso|cab|wim|vhd|vmdk|rar|arj)$"
         } else {
             $_.Extension -eq ".zip"
         }
@@ -286,18 +286,6 @@ $btnExtract.Add_Click({
         $extractPathResolved = Get-NormalPath $extractPath
 
         try {
-            $zipFolder  = $shell.NameSpace($zip.FullName)
-            $destFolder = $shell.NameSpace($extractPathResolved)
-
-            if ($zipFolder -eq $null){
-                $txtLog.AppendText("ERRORE: Il file ZIP è corrotto o non accessibile.`r`n")
-                continue
-            }
-            if ($destFolder -eq $null){
-                $txtLog.AppendText("ERRORE: Impossibile aprire cartella di destinazione: $extractPathResolved`r`n")
-                continue
-            }
-
             if ($has7z) {
                 $txtLog.AppendText("Estrazione con 7-Zip: $($zip.Name)...`r`n")
                 $ovr = if ($chkOverwrite.Checked) { "-y" } else { "-aos" }
@@ -307,14 +295,34 @@ $btnExtract.Add_Click({
                 $output = & $exe7z $args 2>&1
                 
                 if ($LASTEXITCODE -ne 0) {
-                    $txtLog.AppendText("ERRORE 7-Zip (Codice $LASTEXITCODE):`r`n")
-                    $relevantError = $output | Where-Object { $_ -match "Error:" -or $_ -match "ERROR:" }
-                    if ($relevantError) {
-                        foreach($err in $relevantError) { $txtLog.AppendText("  $err`r`n") }
+                    if ($LASTEXITCODE -eq 1) {
+                        $txtLog.AppendText("AVVISO 7-Zip (Codice 1 - Archivio con problemi minori):`r`n")
                     } else {
-                        $txtLog.AppendText("  Controlla la password o l'integrità dell'archivio.`r`n")
+                        $txtLog.AppendText("ERRORE 7-Zip (Codice $LASTEXITCODE):`r`n")
                     }
-                } else {
+                    
+                    # Cerca righe di errore significative
+                    $relevantError = $output | Where-Object { 
+                        $_ -match "Error:" -or 
+                        $_ -match "ERROR:" -or 
+                        $_ -match "ERRORS:" -or
+                        $_ -match "Unexpected end of archive" -or
+                        $_ -match "Wrong password" -or
+                        $_ -match "Data error"
+                    }
+                    
+                    if ($relevantError) {
+                        foreach($err in $relevantError) { 
+                            $cleanErr = $err.ToString().Trim()
+                            if ($cleanErr) { $txtLog.AppendText("  $cleanErr`r`n") }
+                        }
+                    } else {
+                        $txtLog.AppendText("  Dettagli non rilevati. Controlla l'integrità dell'archivio.`r`n")
+                    }
+                }
+                
+                # Se l'estrazione è comunque avvenuta (es. codice 1) o ha avuto successo (codice 0)
+                if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 1) {
                     # Aggiorna progress bar per i file in questo zip
                     if ((& $exe7z l $zip.FullName "-p$pass" | Out-String) -match "(\d+)\s+files") { 
                         $progress.Value += [int]$matches[1] 
@@ -322,6 +330,19 @@ $btnExtract.Add_Click({
                 }
                 [System.Windows.Forms.Application]::DoEvents()
             } else {
+                # Fallback nativo (solo per .zip)
+                $zipFolder  = $shell.NameSpace($zip.FullName)
+                $destFolder = $shell.NameSpace($extractPathResolved)
+
+                if ($zipFolder -eq $null){
+                    $txtLog.AppendText("ERRORE: Il file ZIP è corrotto o non accessibile.`r`n")
+                    continue
+                }
+                if ($destFolder -eq $null){
+                    $txtLog.AppendText("ERRORE: Impossibile aprire cartella di destinazione: $extractPathResolved`r`n")
+                    continue
+                }
+
                 $items = $zipFolder.Items()
                 $totalEntries = $items.Count
                 if ($totalEntries -eq 0) {
