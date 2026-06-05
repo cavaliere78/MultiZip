@@ -34,7 +34,7 @@ if (Test-Path $configFile) {
 $exe7z = ""
 $has7z = $false
 
-if ($config.ContainsKey("Path7Zip") -and $config["Path7Zip"] -ne $null) {
+if ($config.ContainsKey("Path7Zip") -and $config["Path7Zip"] -ne $null -and $config["Path7Zip"] -ne "") {
     $exe7z = $config["Path7Zip"]
 } else {
     # Ricerca 7-Zip
@@ -46,7 +46,7 @@ if ($config.ContainsKey("Path7Zip") -and $config["Path7Zip"] -ne $null) {
     
     foreach ($p in $searchPaths) { if (Test-Path $p) { $exe7z = $p; break } }
 
-    if ([string]::IsNullOrWhiteSpace($exe7z)) {
+    if ([string]::IsNullOrWhiteSpace($exe7z) -and $config["Path7Zip"] -ne "") {
         # Ricerca profonda in tutti i dischi fissi
         Write-Host "7-Zip non trovato nei percorsi standard. Ricerca nel sistema in corso (potrebbe richiedere tempo)..."
         
@@ -234,8 +234,8 @@ $btnExtract.Add_Click({
         return
     }
 
-    # Shell COM
-    $shell = New-Object -ComObject Shell.Application
+    # Shell COM (solo se serve fallback)
+    $shell = if (-not $has7z) { New-Object -ComObject Shell.Application } else { $null }
 
     # Calcola numero totale di file in tutti gli ZIP
     $totalItems = 0
