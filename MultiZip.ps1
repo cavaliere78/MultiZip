@@ -223,7 +223,7 @@ $btnExtract.Add_Click({
     # Cerca Archivi
     $zipFiles = Get-ChildItem -LiteralPath $source -Recurse:$chkRecursive.Checked -File | Where-Object {
         if ($has7z) {
-            $_.Extension -match "\.(zip|7z|rar|tar|gz|tgz|bz2|tbz2|xz|txz|iso|cab|wim|vhd|vmdk|rar|arj)$"
+            $_.Extension -match "\.(7z|arj|bz2|cab|gz|iso|rar|tar|tbz2|tgz|txz|vhd|vmdk|wim|xz|zip)$"
         } else {
             $_.Extension -eq ".zip"
         }
